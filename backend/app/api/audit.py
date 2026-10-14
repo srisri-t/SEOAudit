@@ -12,7 +12,7 @@ from app.core.exceptions import (
     ResponseTooLargeError,
 )
 from app.engine.runner import run_single_url_audit
-from app.models.audit import AuditRequest, AuditResponse
+from app.models.audit import AuditRequest, AuditResponse, BrowserAuditResult
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,10 @@ async def audit_url_endpoint(payload: AuditRequest) -> AuditResponse:
         )
 
     try:
-        result = await run_single_url_audit(target_url=target_url)
+        result = await run_single_url_audit(
+            target_url=target_url,
+            include_browser=payload.include_browser,
+        )
         return result
     except AuditSecurityError as err:
         logger.warning("Audit blocked due to security validation: %s", err.message)
@@ -66,4 +69,56 @@ async def audit_url_endpoint(payload: AuditRequest) -> AuditResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while auditing the target page.",
+        ) from err
+
+
+@router.post(
+    "/browser",
+    response_model=BrowserAuditResult,
+    status_code=status.HTTP_200_OK,
+    summary="Audit Page in Headless Browser",
+    description=(
+        "Executes dynamic client-side rendering in headless Chromium, capturing DOM title, "
+        "description, canonical URL, robots directives, console errors, and runtime exceptions."
+    ),
+)
+async def audit_browser_endpoint(payload: AuditRequest) -> BrowserAuditResult:
+    """Dedicated browser audit endpoint."""
+    target_url = payload.url.strip() if payload.url else ""
+
+    if not target_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The 'url' parameter cannot be empty.",
+        )
+
+    from app.core.exceptions import BrowserNavigationError, BrowserUnavailableError
+    from app.engine.browser.auditor import run_browser_audit
+
+    try:
+        result = await run_browser_audit(target_url=target_url)
+        return result
+    except AuditSecurityError as err:
+        logger.warning("Browser audit blocked due to security validation: %s", err.message)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Security check failed: {err.message}",
+        ) from err
+    except BrowserUnavailableError as err:
+        logger.warning("Browser audit unavailable: %s", err.message)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=err.message,
+        ) from err
+    except BrowserNavigationError as err:
+        logger.info("Browser navigation failed: %s", err.message)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=err.message,
+        ) from err
+    except Exception as err:
+        logger.exception("Unexpected error during browser audit execution")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during browser auditing.",
         ) from err

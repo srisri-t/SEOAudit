@@ -35,6 +35,32 @@ export interface RedirectHop {
   location: string;
 }
 
+export interface ConsoleMessage {
+  level: string;
+  text: string;
+  location: string | null;
+}
+
+export interface PageException {
+  message: string;
+  stack: string | null;
+}
+
+export interface BrowserAuditResult {
+  final_rendered_url: string;
+  browser_status_code: number | null;
+  rendered_title: string | null;
+  rendered_meta_description: string | null;
+  rendered_canonical_url: string | null;
+  rendered_meta_robots: string[];
+  console_errors: ConsoleMessage[];
+  page_exceptions: PageException[];
+  failed_subresources: string[];
+  render_duration_ms: number;
+  hydration_mismatch: boolean;
+  mismatch_details: string[];
+}
+
 export interface AuditResponse {
   url: string;
   final_url: string;
@@ -51,6 +77,7 @@ export interface AuditResponse {
   x_robots_tag: string[];
   summary: AuditSummary;
   findings: Finding[];
+  browser_audit?: BrowserAuditResult | null;
   timestamp: string;
 }
 
@@ -71,7 +98,7 @@ export async function fetchHealth(): Promise<HealthStatus> {
   return response.json();
 }
 
-export async function auditUrl(targetUrl: string): Promise<AuditResponse> {
+export async function auditUrl(targetUrl: string, includeBrowser: boolean = false): Promise<AuditResponse> {
   const url = `${API_BASE}/api/audits/url`;
   const response = await fetch(url, {
     method: 'POST',
@@ -79,7 +106,7 @@ export async function auditUrl(targetUrl: string): Promise<AuditResponse> {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify({ url: targetUrl }),
+    body: JSON.stringify({ url: targetUrl, include_browser: includeBrowser }),
   });
 
   if (!response.ok) {

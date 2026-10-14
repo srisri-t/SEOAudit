@@ -186,10 +186,39 @@ The platform offers a multi-strategy discovery engine:
 
 ---
 
+## Milestone 4: Playwright Browser-Based SEO Auditing
+
+Milestone 4 introduces dynamic browser-rendered SEO checks powered by headless Chromium via Playwright, complementing the fast HTTPX static engine.
+
+### Key Capabilities
+- **DOM Hydration Extraction**: Extracts live rendered `<title>`, `<meta name="description">`, `<link rel="canonical">`, and `<meta name="robots">`.
+- **Hydration Drift Detection**: Compares server-delivered HTML with client-rendered DOM to detect discrepancy in titles, meta descriptions, canonical links, and dynamically injected `noindex` directives.
+- **JavaScript & Console Diagnostics**: Captures unhandled runtime page exceptions (`pageerror`), console errors, and failed subresources.
+- **Dedicated & Combined Endpoints**:
+  - `POST /api/audits/url` with `"include_browser": true` (runs HTTPX audit + browser audit in one unified response).
+  - `POST /api/audits/browser` (dedicated direct browser audit).
+
+### Browser Installation (Windows / Local Machine)
+To enable browser rendering locally, install Chromium:
+```powershell
+.\backend\.venv\Scripts\python.exe -m playwright install chromium
+```
+*(Only Chromium is downloaded, minimizing memory and disk footprint for 16 GB RAM laptops with no dedicated GPU).*
+
+### Subresource SSRF Security & Resource Boundaries
+- **Route Interception (`context.route("**/*")`)**: Every top-level and subresource network request (scripts, stylesheets, images, fonts, iframes, fetch/XHR) is intercepted before dispatch. Prohibits loopback (`127.0.0.1`, `::1`), RFC 1918 private networks, link-local / cloud metadata (`169.254.169.254`, `fe80::/10`), IPv4-mapped IPv6 ranges, and unsafe URL schemes (`file:`, `chrome:`, `javascript:`, `about:`). Safe inline data URIs (`data:image/`, `data:font/`) are permitted.
+- **Operating System Sandboxing**: Native OS process sandboxing is preserved and kept active on Windows (omitting `--no-sandbox`).
+- **Feature Restrictions**: Downloads disabled (`accept_downloads=False`), permissions cleared (`permissions=[]`), and service workers blocked (`service_workers="block"`) to prevent persistent background caching or out-of-band requests.
+- **Popup & Redirect Control**: Auxiliary pages and popups created via `window.open` are automatically closed. Client-side frame navigations (`framenavigated`) to prohibited destination IPs trigger immediate page termination.
+- **Bounded Concurrency & Memory**: Uses an `asyncio.Semaphore(1)` to limit concurrent browser instances, ensuring safe operation on 16 GB RAM laptops with no dedicated GPU.
+- **Bounded Diagnostic Storage**: Caps console errors (max 50), page exceptions (max 20), and failed subresources (max 50), truncating excessive string lengths to prevent memory bloat from malicious loops.
+- **Deterministic Process Teardown**: Chromium process and context lifecycles are wrapped in strict `try ... finally` blocks to ensure cleanup under all outcomes (success, timeout, navigation error, or cancellation).
+- **Graceful Browser Unavailable Fallback**: When Chromium is not installed, `/api/audits/url` with `include_browser=true` returns the complete static HTTPX audit with an advisory finding rather than failing the audit; `/api/audits/browser` returns a clean `503 Service Unavailable`.
+
+---
+
 ## Known Limitations of Current Implementation
 - **Batch Auditing Decoupled**: Sitemap discovery extracts and previews URLs; batch auditing of all discovered URLs is planned for a subsequent milestone.
 - **No Database Persistence**: Sitemaps and audit results run in real-time memory without local SQLite persistence.
-- **TOCTOU DNS Rebinding Window**: Standard Python socket environments have a microsecond window between DNS pre-flight verification and connection establishment.
-- **No Headless Browser**: Dynamic client-side JavaScript rendering (SPA hydration) will be added in Milestone 4 via Playwright.
-
+- **TOCTOU DNS Rebinding Window**: In standard socket environments without kernel-level network namespaces or dedicated egress proxy firewalls, there remains an inherent microsecond Time-Of-Check to Time-Of-Use (TOCTOU) window between pre-flight application-level DNS verification and Chromium's internal socket connection. While pre-flight checks and route interception mitigate standard SSRF, absolute protection against sub-millisecond DNS rebinding requires operating-system network isolation or egress firewall filtering.
 
