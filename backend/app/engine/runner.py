@@ -1,24 +1,34 @@
-"""Audit Runner Coordinator for executing single-URL SEO audits."""
+import logging
 
-from __future__ import annotations
-
+from app.engine.browser.auditor import run_browser_audit
+from app.engine.browser.comparison import evaluate_browser_rules
 from app.engine.extractor import extract_seo_metadata
 from app.engine.fetcher import safe_fetch_url
 from app.engine.rules import evaluate_all_rules
 from app.models.audit import (
     AuditResponse,
     AuditSummary,
+    BrowserAuditResult,
     Finding,
     RedirectHopModel,
 )
 
+logger = logging.getLogger(__name__)
 
-async def run_single_url_audit(target_url: str, client=None) -> AuditResponse:
+
+async def run_single_url_audit(
+    target_url: str,
+    include_browser: bool = False,
+    client=None,
+    browser_context_override=None,
+) -> AuditResponse:
     """Execute a complete single-URL technical SEO audit.
 
     Args:
         target_url: The submitted web page URL.
+        include_browser: If true, runs secondary headless browser rendering and console analysis.
         client: Optional pre-configured HTTPX client for testing.
+        browser_context_override: Optional pre-configured browser context for testing.
 
     Returns:
         Structured AuditResponse model.
@@ -29,10 +39,35 @@ async def run_single_url_audit(target_url: str, client=None) -> AuditResponse:
     # 2. Extract SEO Metadata
     metadata = extract_seo_metadata(fetch_res)
 
-    # 3. Evaluate Audit Rules
+    # 3. Evaluate Static Audit Rules
     findings: list[Finding] = evaluate_all_rules(fetch_res, metadata)
 
-    # 4. Calculate Summary
+    # 4. Optional: Run Browser-Rendered Dynamic Audit
+    browser_result: BrowserAuditResult | None = None
+    if include_browser:
+        try:
+            browser_result = await run_browser_audit(
+                target_url=fetch_res.final_url,
+                server_metadata=metadata,
+                context_override=browser_context_override,
+            )
+            # Evaluate dynamic browser rules
+            browser_findings = evaluate_browser_rules(browser_result)
+            findings.extend(browser_findings)
+        except Exception as err:
+            logger.warning("Browser audit failed for %s: %s", target_url, err)
+            findings.append(
+                Finding(
+                    rule_id="browser-execution",
+                    title="Browser Rendering Execution",
+                    status="warning",
+                    explanation=f"Headless browser audit could not complete: {err}",
+                    recommendation="Ensure Chromium is installed ('playwright install chromium') and the URL is reachable.",
+                    evidence=str(err),
+                )
+            )
+
+    # 5. Calculate Summary
     passed_cnt = sum(1 for f in findings if f.status == "pass")
     warning_cnt = sum(1 for f in findings if f.status == "warning")
     issue_cnt = sum(1 for f in findings if f.status == "issue")
@@ -46,7 +81,7 @@ async def run_single_url_audit(target_url: str, client=None) -> AuditResponse:
         errors=error_cnt,
     )
 
-    # 5. Format redirect hops
+    # 6. Format redirect hops
     hops = [
         RedirectHopModel(
             url=h.url,
@@ -72,4 +107,6 @@ async def run_single_url_audit(target_url: str, client=None) -> AuditResponse:
         x_robots_tag=metadata.robots.x_robots_directives,
         summary=summary,
         findings=findings,
+        outgoing_links=metadata.outgoing_links,
+        browser_audit=browser_result,
     )

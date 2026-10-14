@@ -151,3 +151,50 @@ async def test_fetch_connection_timeout():
         with patch("socket.getaddrinfo", side_effect=mock_public_dns):
             with pytest.raises(AuditFetchError, match="Connection timed out"):
                 await safe_fetch_url("https://example.com/timeout", client=client)
+
+
+@pytest.mark.anyio
+async def test_fetch_prohibited_custom_headers_rejected():
+    """Verify sensitive auth and cookie headers in custom_headers are rejected."""
+    with patch("socket.getaddrinfo", side_effect=mock_public_dns):
+        with pytest.raises(AuditSecurityError, match="credentials, auth tokens, and cookies cannot be forwarded"):
+            await safe_fetch_url(
+                "https://example.com/test",
+                custom_headers={"Authorization": "Bearer secret-token"},
+            )
+
+        with pytest.raises(AuditSecurityError, match="credentials, auth tokens, and cookies cannot be forwarded"):
+            await safe_fetch_url(
+                "https://example.com/test",
+                custom_headers={"Cookie": "session=12345"},
+            )
+
+        with pytest.raises(AuditSecurityError, match="credentials, auth tokens, and cookies cannot be forwarded"):
+            await safe_fetch_url(
+                "https://example.com/test",
+                custom_headers={"X-API-Key": "super-secret-key"},
+            )
+
+
+@pytest.mark.anyio
+async def test_fetch_allowed_custom_headers():
+    """Verify safe custom headers (e.g. Accept) are passed to outgoing request."""
+    captured_accept = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_accept
+        captured_accept = request.headers.get("accept")
+        return httpx.Response(200, headers={"content-type": "application/xml"}, text="<xml/>")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        with patch("socket.getaddrinfo", side_effect=mock_public_dns):
+            res = await safe_fetch_url(
+                "https://example.com/sitemap.xml",
+                client=client,
+                custom_headers={"Accept": "application/xml"},
+            )
+
+    assert res.status_code == 200
+    assert captured_accept == "application/xml"
+

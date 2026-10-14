@@ -55,6 +55,7 @@ class ExtractedMetadata:
     canonical: CanonicalData
     robots: RobotsDirectiveData
     raw_headings_h1: list[str] = field(default_factory=list)
+    outgoing_links: list[str] = field(default_factory=list)
 
 
 def parse_directives(directive_str: str) -> list[str]:
@@ -207,10 +208,23 @@ def extract_seo_metadata(fetch_result: FetchResult) -> ExtractedMetadata:
     # 6. Optional H1 elements for context
     h1_elements = [h1.get_text().strip() for h1 in soup.find_all("h1") if h1.get_text().strip()]
 
+    # 7. Extract outgoing links for internal-link analysis
+    discovered_links: list[str] = []
+    seen_links: set[str] = set()
+    for a_tag in soup.find_all("a", href=True):
+        raw_href = a_tag["href"].strip()
+        if not raw_href or raw_href.startswith(("#", "javascript:", "mailto:", "tel:")):
+            continue
+        resolved_link = urljoin(fetch_result.final_url, raw_href)
+        if resolved_link not in seen_links:
+            seen_links.add(resolved_link)
+            discovered_links.append(resolved_link)
+
     return ExtractedMetadata(
         title=title_data,
         description=desc_data,
         canonical=canonical_data,
         robots=robots_data,
         raw_headings_h1=h1_elements,
+        outgoing_links=discovered_links,
     )

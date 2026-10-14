@@ -27,3 +27,20 @@ class ResponseTooLargeError(AuditFetchError):
             f"Response body exceeded maximum allowed limit of {max_bytes} bytes.",
             error_type="RESPONSE_TOO_LARGE",
         )
+
+
+class BrowserUnavailableError(Exception):
+    """Raised when Playwright or browser binary is missing or cannot be launched."""
+
+    def __init__(self, message: str = "Playwright Chromium browser is unavailable."):
+        super().__init__(message)
+        self.message = message
+
+
+class BrowserNavigationError(Exception):
+    """Raised when browser navigation fails due to connection, security, or timeout errors."""
+
+    def __init__(self, message: str, error_type: str = "NAVIGATION_ERROR"):
+        super().__init__(message)
+        self.message = message
+        self.error_type = error_type

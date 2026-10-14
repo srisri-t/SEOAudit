@@ -46,6 +46,20 @@ class FetchResult:
     error: str | None = None
 
 
+PROHIBITED_REQUEST_HEADERS = {
+    "authorization",
+    "cookie",
+    "cookie2",
+    "set-cookie",
+    "proxy-authorization",
+    "proxy-authenticate",
+    "x-csrf-token",
+    "x-xsrf-token",
+    "x-api-key",
+    "x-auth-token",
+}
+
+
 async def safe_fetch_url(
     target_url: str,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
@@ -53,6 +67,7 @@ async def safe_fetch_url(
     connect_timeout: float = DEFAULT_TIMEOUT_CONNECT,
     read_timeout: float = DEFAULT_TIMEOUT_READ,
     client: httpx.AsyncClient | None = None,
+    custom_headers: dict[str, str] | None = None,
 ) -> FetchResult:
     """Safely fetch a validated URL with per-hop redirect verification and size limits.
 
@@ -63,12 +78,13 @@ async def safe_fetch_url(
         connect_timeout: Connection establishment timeout in seconds.
         read_timeout: Response read timeout in seconds.
         client: Optional pre-configured HTTPX AsyncClient (useful for unit tests).
+        custom_headers: Optional additional/override request headers.
 
     Returns:
         FetchResult containing response metadata and safely buffered body.
 
     Raises:
-        AuditSecurityError: If any redirect destination is prohibited.
+        AuditSecurityError: If any redirect destination is prohibited or credential headers passed.
         AuditFetchError: If request fails due to network, DNS, or timeout errors.
     """
     current_url = validate_and_normalize_url(target_url, resolve_dns=True)
@@ -80,6 +96,14 @@ async def safe_fetch_url(
         "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
     }
+    if custom_headers:
+        for k, v in custom_headers.items():
+            if k.lower() in PROHIBITED_REQUEST_HEADERS:
+                raise AuditSecurityError(
+                    f"Custom header '{k}' is prohibited: credentials, auth tokens, and cookies cannot be forwarded.",
+                    security_code="CREDENTIAL_HEADER_PROHIBITED",
+                )
+            headers[k] = v
 
     timeouts = httpx.Timeout(
         connect=connect_timeout,

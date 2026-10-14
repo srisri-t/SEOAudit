@@ -7,17 +7,25 @@ import {
   type Finding,
   type FindingStatus,
 } from './services/api';
+import SitemapDiscovery from './components/SitemapDiscovery';
+import BatchAudit from './components/BatchAudit';
 
 type ConnectionState = 'loading' | 'connected' | 'error';
 type FilterOption = 'all' | FindingStatus;
 
 export default function App() {
+  // Navigation tab state
+  const [activeTab, setActiveTab] = useState<'audit' | 'batch' | 'sitemaps'>('audit');
+  const [batchPreloadUrls, setBatchPreloadUrls] = useState<string[]>([]);
+  const [batchPreloadWebsite, setBatchPreloadWebsite] = useState<string>('');
+
   // Backend health state
   const [connectionState, setConnectionState] = useState<ConnectionState>('loading');
   const [healthData, setHealthData] = useState<HealthStatus | null>(null);
 
   // Audit form state
   const [targetUrl, setTargetUrl] = useState<string>('https://www.holyspace.live');
+  const [includeBrowser, setIncludeBrowser] = useState<boolean>(false);
   const [isAuditing, setIsAuditing] = useState<boolean>(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<AuditResponse | null>(null);
@@ -56,7 +64,7 @@ export default function App() {
     setAuditError(null);
 
     try {
-      const result = await auditUrl(trimmed);
+      const result = await auditUrl(trimmed, includeBrowser);
       setAuditResult(result);
     } catch (err) {
       setAuditError(err instanceof Error ? err.message : 'An error occurred during audit.');
@@ -165,8 +173,69 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-6 md:p-8 space-y-6">
-        {/* Audit Form Section */}
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl space-y-4">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('audit')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === 'audit'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>🔍</span>
+            <span>Single-URL Audit</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('batch')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === 'batch'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>⚡</span>
+            <span>Batch Auditing</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700">
+              M5
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('sitemaps')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === 'sitemaps'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>🗺️</span>
+            <span>Sitemap Discovery</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700">
+              M3
+            </span>
+          </button>
+        </div>
+
+        {activeTab === 'batch' ? (
+          <BatchAudit
+            initialUrls={batchPreloadUrls}
+            initialWebsiteUrl={batchPreloadWebsite}
+          />
+        ) : activeTab === 'sitemaps' ? (
+          <SitemapDiscovery
+            onSendToBatch={(urls, site) => {
+              setBatchPreloadUrls(urls);
+              setBatchPreloadWebsite(site || '');
+              setActiveTab('batch');
+            }}
+          />
+        ) : (
+          <>
+            {/* Audit Form Section */}
+            <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl space-y-4">
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">
               Audit Web Page
@@ -226,6 +295,28 @@ export default function App() {
               >
                 https://example.com
               </button>
+            </div>
+
+            {/* Browser Rendering Toggle (M4) */}
+            <div className="flex items-center gap-2.5 pt-2 border-t border-slate-800/60">
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={includeBrowser}
+                  onChange={(e) => setIncludeBrowser(e.target.checked)}
+                  disabled={isAuditing}
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-indigo-500 accent-indigo-600 cursor-pointer"
+                />
+                <span className="font-medium text-slate-200">
+                  Enable Headless Browser Rendering (Playwright Chromium)
+                </span>
+              </label>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700">
+                M4
+              </span>
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                Inspects DOM hydration, runtime JS console errors &amp; metadata drift
+              </span>
             </div>
           </form>
 
@@ -327,6 +418,134 @@ export default function App() {
                 )}
               </div>
             </section>
+
+            {/* Browser Rendered Diagnostics Card (M4) */}
+            {auditResult.browser_audit && (
+              <section className="rounded-xl border border-indigo-900/60 bg-gradient-to-b from-indigo-950/20 to-slate-900/70 p-5 space-y-4 shadow-xl shadow-indigo-950/20">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-indigo-900/40 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🌐</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-white tracking-tight">
+                          Browser-Rendered Diagnostics (Chromium)
+                        </h3>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700">
+                          M4 Live
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Rendered in {auditResult.browser_audit.render_duration_ms} ms &bull; Final URL: <span className="font-mono text-indigo-300">{auditResult.browser_audit.final_rendered_url}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {auditResult.browser_audit.hydration_mismatch ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-800">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        Hydration Drift Detected
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-800">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        Clean Hydration Match
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Hydration Mismatch Details Alert */}
+                {auditResult.browser_audit.hydration_mismatch && (
+                  <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-800/60 text-xs space-y-1.5">
+                    <div className="font-semibold text-amber-300 flex items-center gap-1.5">
+                      <span>⚠️</span>
+                      <span>Differences between server-delivered HTML and client-rendered DOM:</span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px] font-mono">
+                      {auditResult.browser_audit.mismatch_details.map((detail, idx) => (
+                        <li key={idx} className="break-words">{detail}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Metadata Comparison Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-lg bg-slate-950/70 border border-slate-800 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Rendered Page Title</span>
+                    <div className="text-white font-medium break-words">
+                      {auditResult.browser_audit.rendered_title || <span className="text-slate-500 italic">None</span>}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-slate-950/70 border border-slate-800 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Rendered Canonical Link</span>
+                    <div className="font-mono text-indigo-300 break-all text-[11px]">
+                      {auditResult.browser_audit.rendered_canonical_url || <span className="text-slate-500 italic">None</span>}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-slate-950/70 border border-slate-800 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Rendered Meta Description</span>
+                    <div className="text-slate-300 break-words leading-relaxed text-[11px]">
+                      {auditResult.browser_audit.rendered_meta_description || <span className="text-slate-500 italic">None</span>}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-slate-950/70 border border-slate-800 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Rendered Meta Robots</span>
+                    <div className="font-mono text-slate-300 text-[11px]">
+                      {auditResult.browser_audit.rendered_meta_robots.length > 0 ? (
+                        auditResult.browser_audit.rendered_meta_robots.join(', ')
+                      ) : (
+                        <span className="text-slate-500 italic">None</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Console Errors & Exceptions Diagnostics */}
+                <div className="pt-2 border-t border-slate-800 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-300">Runtime JavaScript &amp; Console Status:</span>
+                    {auditResult.browser_audit.page_exceptions.length === 0 && auditResult.browser_audit.console_errors.length === 0 ? (
+                      <span className="text-emerald-400 text-[11px] flex items-center gap-1">
+                        <span>✓</span> 0 Console Errors &bull; 0 Unhandled Exceptions
+                      </span>
+                    ) : (
+                      <span className="text-rose-400 text-[11px] font-semibold flex items-center gap-1">
+                        <span>⚠</span> {auditResult.browser_audit.page_exceptions.length} exception(s) &bull; {auditResult.browser_audit.console_errors.length} console error(s)
+                      </span>
+                    )}
+                  </div>
+
+                  {auditResult.browser_audit.page_exceptions.length > 0 && (
+                    <div className="p-2.5 rounded bg-rose-950/40 border border-rose-900/60 space-y-1">
+                      <span className="text-rose-300 font-semibold text-[11px]">Unhandled Page Exceptions:</span>
+                      <ul className="space-y-1 font-mono text-[11px] text-rose-200">
+                        {auditResult.browser_audit.page_exceptions.map((ex, idx) => (
+                          <li key={idx} className="break-all">{ex.message}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {auditResult.browser_audit.console_errors.length > 0 && (
+                    <div className="p-2.5 rounded bg-slate-950 border border-slate-800 space-y-1 max-h-40 overflow-y-auto">
+                      <span className="text-amber-400 font-medium text-[11px]">Console Error Logs:</span>
+                      <ul className="space-y-1 font-mono text-[11px] text-slate-400">
+                        {auditResult.browser_audit.console_errors.map((c, idx) => (
+                          <li key={idx} className="break-all">
+                            [{c.level.toUpperCase()}] {c.text} {c.location && <span className="text-slate-600 font-sans">({c.location})</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Findings Filter Bar & List */}
             <section className="space-y-4">
@@ -445,12 +664,14 @@ export default function App() {
             </button>
           </section>
         )}
+          </>
+        )}
       </main>
 
       {/* Footer */}
       <footer className="border-t border-slate-800 bg-slate-900/40 px-6 py-4 mt-auto">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
-          <span>Universal SEO Automation &amp; Maintenance Platform • Milestone 2 Engine</span>
+          <span>Universal SEO Automation &amp; Maintenance Platform • Milestone 3 Foundation</span>
           <div className="flex items-center gap-4">
             <a
               href="http://127.0.0.1:8000/docs"
