@@ -8,13 +8,16 @@ import {
   type FindingStatus,
 } from './services/api';
 import SitemapDiscovery from './components/SitemapDiscovery';
+import BatchAudit from './components/BatchAudit';
 
 type ConnectionState = 'loading' | 'connected' | 'error';
 type FilterOption = 'all' | FindingStatus;
 
 export default function App() {
   // Navigation tab state
-  const [activeTab, setActiveTab] = useState<'audit' | 'sitemaps'>('audit');
+  const [activeTab, setActiveTab] = useState<'audit' | 'batch' | 'sitemaps'>('audit');
+  const [batchPreloadUrls, setBatchPreloadUrls] = useState<string[]>([]);
+  const [batchPreloadWebsite, setBatchPreloadWebsite] = useState<string>('');
 
   // Backend health state
   const [connectionState, setConnectionState] = useState<ConnectionState>('loading');
@@ -186,6 +189,21 @@ export default function App() {
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab('batch')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === 'batch'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>⚡</span>
+            <span>Batch Auditing</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700">
+              M5
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('sitemaps')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
               activeTab === 'sitemaps'
@@ -201,8 +219,19 @@ export default function App() {
           </button>
         </div>
 
-        {activeTab === 'sitemaps' ? (
-          <SitemapDiscovery />
+        {activeTab === 'batch' ? (
+          <BatchAudit
+            initialUrls={batchPreloadUrls}
+            initialWebsiteUrl={batchPreloadWebsite}
+          />
+        ) : activeTab === 'sitemaps' ? (
+          <SitemapDiscovery
+            onSendToBatch={(urls, site) => {
+              setBatchPreloadUrls(urls);
+              setBatchPreloadWebsite(site || '');
+              setActiveTab('batch');
+            }}
+          />
         ) : (
           <>
             {/* Audit Form Section */}

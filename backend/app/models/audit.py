@@ -130,6 +130,10 @@ class AuditResponse(BaseModel):
     x_robots_tag: list[str] = Field(default_factory=list, description="Directives from X-Robots-Tag header")
     summary: AuditSummary = Field(..., description="Summary counts of check results")
     findings: list[Finding] = Field(..., description="List of individual rule evaluation results")
+    outgoing_links: list[str] = Field(
+        default_factory=list,
+        description="Extracted outgoing link URLs from page HTML",
+    )
     browser_audit: BrowserAuditResult | None = Field(
         default=None,
         description="Optional browser rendering and console diagnostics (null if include_browser was false or browser unavailable)",

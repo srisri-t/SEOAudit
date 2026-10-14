@@ -217,8 +217,82 @@ To enable browser rendering locally, install Chromium:
 
 ---
 
-## Known Limitations of Current Implementation
-- **Batch Auditing Decoupled**: Sitemap discovery extracts and previews URLs; batch auditing of all discovered URLs is planned for a subsequent milestone.
-- **No Database Persistence**: Sitemaps and audit results run in real-time memory without local SQLite persistence.
-- **TOCTOU DNS Rebinding Window**: In standard socket environments without kernel-level network namespaces or dedicated egress proxy firewalls, there remains an inherent microsecond Time-Of-Check to Time-Of-Use (TOCTOU) window between pre-flight application-level DNS verification and Chromium's internal socket connection. While pre-flight checks and route interception mitigate standard SSRF, absolute protection against sub-millisecond DNS rebinding requires operating-system network isolation or egress firewall filtering.
+## Milestone 5: Batch Auditing & Export Engine
+
+Milestone 5 transforms the single-URL SEO auditor into a local-first website auditing platform. It audits multiple URLs concurrently, persists execution history in SQLite, calculates website-wide aggregate findings, and exports reports for developers and AI assistants.
+
+### Key Capabilities
+- **Batch Orchestration**: Accepts direct lists of URLs or auto-discovers URLs from sitemaps, deduplicating while preserving input ordering.
+- **Bounded Concurrency & Timeouts**: Runs asynchronous workers with bounded concurrency (`asyncio.Semaphore`, configurable from 1 to 10, default 3) and execution timeouts (per-page and per-run).
+- **Failure Isolation**: An individual URL failure (e.g. 502 Bad Gateway, network timeout, SSL error) is isolated and recorded as a failed page without crashing or stopping the rest of the batch.
+- **Cooperative Cancellation**: Active batch runs can be cancelled at runtime; in-flight tasks finish safely, remaining pages are marked as skipped, and the run status transitions to `cancelled`.
+- **Local SQLite Persistence**: Uses standard library `sqlite3` configured with WAL (Write-Ahead Logging) mode, synchronous `NORMAL`, foreign key enforcement, and a 5-second busy timeout. Preserves run history across server restarts in `data/seo_audit.db` (gitignored).
+- **Website-Wide SEO Analysis**:
+  - **Duplicate Title Detection**: Normalizes whitespace and groups pages sharing identical titles.
+  - **Duplicate Description Detection**: Identifies duplicate meta descriptions across distinct URLs.
+  - **Missing Metadata Counters**: Accurately counts missing titles and missing meta descriptions.
+  - **HTTP Status Code Breakdown**: Aggregates distribution across 2xx, 3xx, 4xx, 5xx, and network errors.
+  - **Internal Link Health Verification**: Checks outgoing `<a href>` links within the audited domain scope without uncontrolled external crawling. Clearly separates confirmed broken links (target audited and returned >= 400 or failed) from unverified links (target outside the audited batch limit).
+- **Multi-Format Report Exports**:
+  - **JSON**: Complete serialized run configuration, aggregate metrics, and per-page audit findings.
+  - **CSV (with Formula Injection Mitigation)**: Tabular per-page results. Cells starting with dangerous spreadsheet formula characters (`=`, `+`, `-`, `@`, `\t`, `\r`) are automatically prefixed with a single quote (`'`) to neutralize CSV injection / DDE attacks.
+  - **Markdown**: Formatted executive report with summary tables, severity counts, duplicate content groups, and broken link listings.
+
+---
+
+### Batch Audit API Endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/batch-audits` | Create and trigger an asynchronous batch audit run |
+| `GET` | `/api/batch-audits` | List recent batch audit runs (supports pagination: `limit`, `offset`) |
+| `GET` | `/api/batch-audits/{run_id}` | Retrieve run status, progress counts, and summary |
+| `GET` | `/api/batch-audits/{run_id}/pages` | Retrieve paginated page results (filterable by `status=success\|failed\|skipped`) |
+| `GET` | `/api/batch-audits/{run_id}/summary` | Retrieve aggregate SEO summary and duplicate content analysis |
+| `POST` | `/api/batch-audits/{run_id}/cancel` | Cooperatively cancel an active batch audit |
+| `GET` | `/api/batch-audits/{run_id}/export` | Export report as `json`, `csv`, or `markdown` (query param `format`) |
+
+#### Example: Create Batch Audit Request
+```json
+POST /api/batch-audits
+{
+  "urls": [
+    "https://www.holyspace.live",
+    "https://www.holyspace.live/about",
+    "https://www.holyspace.live/terms"
+  ],
+  "config": {
+    "max_pages": 25,
+    "concurrency": 3,
+    "page_timeout_seconds": 15.0,
+    "include_browser": false
+  }
+}
+```
+
+#### Example: Export Report
+```text
+GET /api/batch-audits/{run_id}/export?format=csv
+Content-Disposition: attachment; filename="seo_audit_{run_id}.csv"
+```
+
+---
+
+### Running the Test Suites
+
+#### Backend Tests (M1–M5)
+```powershell
+backend\.venv\Scripts\python.exe -m pytest backend/ -v
+```
+
+#### Frontend Production Build
+```powershell
+npm run --prefix frontend build
+```
+
+---
+
+## Known Limitations & Production Recommendations
+- **In-Process Background Tasks**: The batch orchestrator currently manages concurrency in-process using Python's `asyncio` event loop and SQLite. This is ideal for lightweight, local-first deployments. If deploying to a distributed, multi-server cloud environment, migrating the background runner to a durable distributed worker (e.g. Celery / RQ) with Redis/PostgreSQL is recommended.
+- **TOCTOU DNS Rebinding Window**: Pre-flight URL validation checks host IP addresses against loopback, RFC 1918, link-local, and cloud metadata ranges before HTTP request dispatch. In standard host OS environments without network-level egress proxies, an inherent microsecond Time-Of-Check to Time-Of-Use (TOCTOU) window exists if an attacker controls a public DNS server configured for sub-millisecond DNS rebinding. For enterprise production deployments, configure operating system firewall egress rules or an egress filtering proxy.
 

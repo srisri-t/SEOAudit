@@ -107,5 +107,6 @@ async def run_single_url_audit(
         x_robots_tag=metadata.robots.x_robots_directives,
         summary=summary,
         findings=findings,
+        outgoing_links=metadata.outgoing_links,
         browser_audit=browser_result,
     )

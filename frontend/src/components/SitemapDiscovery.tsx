@@ -1,7 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import { discoverSitemaps, type SitemapDiscoverResponse } from '../services/api';
 
-export default function SitemapDiscovery() {
+interface SitemapDiscoveryProps {
+  onSendToBatch?: (urls: string[], websiteUrl?: string) => void;
+}
+
+export default function SitemapDiscovery({ onSendToBatch }: SitemapDiscoveryProps = {}) {
   const [websiteUrl, setWebsiteUrl] = useState<string>('https://www.holyspace.live');
   const [sitemapUrl, setSitemapUrl] = useState<string>('');
   const [maxUrls, setMaxUrls] = useState<number>(1000);
@@ -358,6 +362,15 @@ export default function SitemapDiscovery() {
                   >
                     <span>{copied ? '✓ Copied' : '📋 Copy All'}</span>
                   </button>
+                  {onSendToBatch && (
+                    <button
+                      type="button"
+                      onClick={() => onSendToBatch(discoveryResult.urls, discoveryResult.website_url)}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-sm transition-colors flex items-center gap-1.5"
+                    >
+                      <span>🚀 Audit in Batch</span>
+                    </button>
+                  )}
                 </div>
               </div>
 

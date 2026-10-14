@@ -6,12 +6,25 @@ Security & Network Binding:
     untrusted networks.
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.audit import router as audit_router
+from app.api.batch import router as batch_router
 from app.api.health import router as health_router
 from app.api.sitemaps import router as sitemaps_router
+from app.db.connection import init_db, reconcile_stale_runs
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize database tables idempotently and reconcile stale runs at application startup."""
+    init_db()
+    reconcile_stale_runs()
+    yield
+
 
 app = FastAPI(
     title="Universal SEO Automation & Maintenance Platform API",
@@ -20,6 +33,7 @@ app = FastAPI(
         "and AI-ready report generation."
     ),
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Allow local frontend development origins
@@ -41,6 +55,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(audit_router)
 app.include_router(sitemaps_router)
+app.include_router(batch_router)
 
 
 @app.get("/", tags=["root"], summary="Root service info")
