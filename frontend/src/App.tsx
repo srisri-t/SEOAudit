@@ -7,11 +7,15 @@ import {
   type Finding,
   type FindingStatus,
 } from './services/api';
+import SitemapDiscovery from './components/SitemapDiscovery';
 
 type ConnectionState = 'loading' | 'connected' | 'error';
 type FilterOption = 'all' | FindingStatus;
 
 export default function App() {
+  // Navigation tab state
+  const [activeTab, setActiveTab] = useState<'audit' | 'sitemaps'>('audit');
+
   // Backend health state
   const [connectionState, setConnectionState] = useState<ConnectionState>('loading');
   const [healthData, setHealthData] = useState<HealthStatus | null>(null);
@@ -165,8 +169,43 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-6 md:p-8 space-y-6">
-        {/* Audit Form Section */}
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl space-y-4">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('audit')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === 'audit'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>🔍</span>
+            <span>Single-URL Audit</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('sitemaps')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === 'sitemaps'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>🗺️</span>
+            <span>Sitemap Discovery</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700">
+              M3
+            </span>
+          </button>
+        </div>
+
+        {activeTab === 'sitemaps' ? (
+          <SitemapDiscovery />
+        ) : (
+          <>
+            {/* Audit Form Section */}
+            <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl space-y-4">
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">
               Audit Web Page
@@ -445,12 +484,14 @@ export default function App() {
             </button>
           </section>
         )}
+          </>
+        )}
       </main>
 
       {/* Footer */}
       <footer className="border-t border-slate-800 bg-slate-900/40 px-6 py-4 mt-auto">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
-          <span>Universal SEO Automation &amp; Maintenance Platform • Milestone 2 Engine</span>
+          <span>Universal SEO Automation &amp; Maintenance Platform • Milestone 3 Foundation</span>
           <div className="flex items-center gap-4">
             <a
               href="http://127.0.0.1:8000/docs"

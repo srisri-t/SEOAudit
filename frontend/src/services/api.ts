@@ -97,3 +97,49 @@ export async function auditUrl(targetUrl: string): Promise<AuditResponse> {
 
   return response.json();
 }
+
+export interface SitemapDiscoverResponse {
+  website_url: string;
+  sitemap_status: string;
+  discovered_sitemaps: string[];
+  discovered_url_count: number;
+  urls: string[];
+  warnings: string[];
+  errors: string[];
+  processing_duration_ms: number;
+}
+
+export async function discoverSitemaps(
+  websiteUrl: string,
+  sitemapUrl?: string | null,
+  maxUrls: number = 1000,
+): Promise<SitemapDiscoverResponse> {
+  const url = `${API_BASE}/api/sitemaps/discover`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      website_url: websiteUrl,
+      sitemap_url: sitemapUrl && sitemapUrl.trim() ? sitemapUrl.trim() : null,
+      max_urls: maxUrls,
+    }),
+  });
+
+  if (!response.ok) {
+    let errorDetail = `HTTP ${response.status}: ${response.statusText}`;
+    try {
+      const errorJson = await response.json();
+      if (errorJson && errorJson.detail) {
+        errorDetail = errorJson.detail;
+      }
+    } catch {
+      // Fallback to HTTP status text if response is not JSON
+    }
+    throw new Error(errorDetail);
+  }
+
+  return response.json();
+}

@@ -78,6 +78,7 @@ cd backend
 ```
 - API Health Endpoint: `http://127.0.0.1:8000/api/health`
 - Single-URL Audit Endpoint: `POST http://127.0.0.1:8000/api/audits/url`
+- Sitemap Discovery Endpoint: `POST http://127.0.0.1:8000/api/sitemaps/discover`
 - Interactive OpenAPI / Swagger UI: `http://127.0.0.1:8000/docs`
 
 ---
@@ -117,19 +118,78 @@ npm run build
 7. **X-Robots-Tag Header Directives (`x-robots-tag`)**: Detects `noindex` or `none` directives in HTTP response headers.
 8. **Content-Type & HTML Validity (`content-type`)**: Verifies `text/html` or `application/xhtml+xml` MIME types.
 
-### Security Architecture & SSRF Defenses
-- **Scheme Filtering**: Strictly restricts input to `http://` and `https://`.
-- **Credentials Blocking**: Rejects embedded user/pass authentication in URLs.
-- **Literal IP & Range Blacklisting**: Automatically rejects RFC 1918 private IPs (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`, `::1`), link-local / cloud metadata services (`169.254.0.0/16`, `169.254.169.254`), and IPv6 ULA/multicast/reserved networks.
-- **DNS Resolution Pre-flight**: Resolves hostnames to IP addresses prior to connecting, preventing DNS rebinding attacks to internal infrastructure.
-- **Manual Redirects with Per-hop Re-validation**: Automatic redirects are disabled. Every redirect destination is re-validated through the full SSRF and IP filter before the next request is initiated.
-- **Response Size Capping**: Streaming body reads strictly limit incoming responses to 2MB to prevent memory exhaustion / denial of service.
-- **Time-Of-Check to Time-Of-Use (TOCTOU) Note**: In standard socket environments, there remains an inherent brief window between DNS resolution and socket connection. This is mitigated by per-hop redirect resolution checks and safe loopback server binding.
+---
+
+## Milestone 3: Sitemap Discovery & XML Parsing
+
+### Discovery Workflow
+The platform offers a multi-strategy discovery engine:
+1. **Robots.txt Inspection**: Queries `/robots.txt` for `Sitemap:` directives and extracts candidate URLs.
+2. **Standard Fallback**: If no sitemaps are declared in `robots.txt` (or robots.txt is 404), falls back to testing standard candidate `/sitemap.xml`.
+3. **Explicit Sitemap URL**: Allows users to specify a direct sitemap URL (e.g. `https://example.com/sitemap_index.xml`), bypassing discovery.
+4. **Sitemap Index Recursion**: Automatically recurses into child sitemaps with strict depth and count limits.
+
+### Supported Sitemap Formats
+- Standard XML URL sets (`<urlset><url><loc>...</loc></url></urlset>`)
+- Namespaced XML (e.g. `http://www.sitemaps.org/schemas/sitemap/0.9`, Google Image/Video/News extensions)
+- Sitemap index files (`<sitemapindex><sitemap><loc>...</loc></sitemap></sitemapindex>`)
+
+### Configurable Limits & Thresholds
+- **Maximum Discovered URLs (`max_urls`)**: Default `1,000`, hard maximum `10,000`. Unlimited discovery requests are rejected.
+- **Maximum Child Sitemaps**: Default `50` child sitemaps per index.
+- **Index Recursion Depth**: Capped at `1 level` (a sitemap index cannot contain nested sitemap indexes).
+- **Download Size Limit**: `5 MB` per sitemap file; oversized downloads are aborted.
+- **Processing Timeout**: Overall run timeout of `30 seconds`.
+
+### Security Protections
+- **XML External Entity (XXE) & DTD Bomb Protection**: Built with `defusedxml` to block entity expansion, billion-laughs attacks, and external DTD injection.
+- **SSRF Defense-in-Depth**: Every target URL, robots.txt directive, and child sitemap URL in an index is validated against SSRF before requests are issued. Prohibits RFC 1918 private IPs, loopback, link-local / cloud metadata (e.g. `169.254.169.254`), and multicast.
+- **Per-Hop Redirect Re-Validation**: Prevents open redirect SSRF attacks.
+- **No Credential Leakage**: Never forwards browser cookies or auth tokens to target destinations.
+
+### API Specifications: `POST /api/sitemaps/discover`
+
+#### Example Request:
+```json
+{
+  "website_url": "https://example.com/",
+  "sitemap_url": null,
+  "max_urls": 1000
+}
+```
+
+#### Example Response:
+```json
+{
+  "website_url": "https://example.com/",
+  "sitemap_status": "Sitemap found",
+  "discovered_sitemaps": [
+    "https://example.com/sitemap.xml"
+  ],
+  "discovered_url_count": 2,
+  "urls": [
+    "https://example.com/page1",
+    "https://example.com/page2"
+  ],
+  "warnings": [],
+  "errors": [],
+  "processing_duration_ms": 142.5
+}
+```
+
+#### Discovery Status Values:
+- `Sitemap found`: Valid sitemap discovered and parsed successfully.
+- `Sitemap not found`: Neither `robots.txt` nor `/sitemap.xml` yielded an accessible sitemap (e.g. HTTP 404).
+- `Sitemap inaccessible`: Network timeout, connection refused, or 5xx server error.
+- `Invalid sitemap`: Document was fetched (HTTP 200) but was corrupted XML, HTML error page, empty, or contained no valid URLs.
+- `Discovery blocked by security validation`: Destination or child sitemap attempted access to a prohibited IP/host.
 
 ---
 
 ## Known Limitations of Current Implementation
-- **Single-URL Scope**: Batch URL processing and sitemap (`sitemap.xml`) automated crawling are deferred to subsequent milestones.
-- **No Database Persistence**: Runs execute in real-time memory without local SQLite history.
-- **No Headless Browser**: Dynamic client-side JavaScript rendering (SPA hydration) and browser console error logging will be added in Milestone 4 via Playwright.
+- **Batch Auditing Decoupled**: Sitemap discovery extracts and previews URLs; batch auditing of all discovered URLs is planned for a subsequent milestone.
+- **No Database Persistence**: Sitemaps and audit results run in real-time memory without local SQLite persistence.
+- **TOCTOU DNS Rebinding Window**: Standard Python socket environments have a microsecond window between DNS pre-flight verification and connection establishment.
+- **No Headless Browser**: Dynamic client-side JavaScript rendering (SPA hydration) will be added in Milestone 4 via Playwright.
+
 
