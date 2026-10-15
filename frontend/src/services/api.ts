@@ -402,3 +402,145 @@ export async function downloadBatchExport(
   window.URL.revokeObjectURL(downloadUrl);
   document.body.removeChild(a);
 }
+
+// =============================================================================
+// M6.1 Audit Run Comparison Types & API Helpers
+// =============================================================================
+
+export type ComparisonCompleteness = 'complete' | 'partial' | 'incomplete';
+export type AssessmentVerdict = 'improved' | 'deteriorated' | 'mixed' | 'unchanged' | 'incomplete';
+export type IssueChangeType = 'new' | 'resolved' | 'persistent' | 'incomparable';
+export type MetadataChangeType = 'added' | 'removed' | 'changed' | 'unchanged' | 'unavailable';
+export type CoveragePageStatus = 'common' | 'new' | 'missing_in_comparison';
+
+export interface IssueComparisonItem {
+  page_url: string;
+  rule_id: string;
+  rule_title: string;
+  status: FindingStatus;
+  change_type: IssueChangeType;
+  explanation: string;
+  recommendation: string | null;
+  evidence: string | null;
+  incomparable_reason?: string | null;
+}
+
+export interface MetadataFieldChange {
+  page_url: string;
+  field_name: 'title' | 'meta_description' | 'canonical_url' | 'status_code';
+  baseline_value: string | null;
+  comparison_value: string | null;
+  change_type: MetadataChangeType;
+}
+
+export interface PageCoverageItem {
+  url: string;
+  coverage_status: CoveragePageStatus;
+  baseline_page_status: string | null;
+  comparison_page_status: string | null;
+}
+
+export interface ComparisonSummary {
+  baseline_run_id: string;
+  baseline_created_at: string;
+  comparison_run_id: string;
+  comparison_created_at: string;
+  website_scope: string;
+  total_pages_baseline: number;
+  total_pages_comparison: number;
+  common_pages_count: number;
+  new_pages_count: number;
+  missing_pages_count: number;
+  new_issues_count: number;
+  resolved_issues_count: number;
+  persistent_issues_count: number;
+  incomparable_findings_count: number;
+  metadata_changes_count: number;
+  page_retrieval_failures: number;
+  coverage_warnings: string[];
+  comparison_completeness: ComparisonCompleteness;
+}
+
+export interface ComparisonAssessment {
+  verdict: AssessmentVerdict;
+  headline: string;
+  explanation: string;
+}
+
+export interface AuditComparisonResponse {
+  baseline_run: BatchAuditRunResponse;
+  comparison_run: BatchAuditRunResponse;
+  summary: ComparisonSummary;
+  assessment: ComparisonAssessment;
+  issue_changes: IssueComparisonItem[];
+  metadata_changes: MetadataFieldChange[];
+  page_coverage: PageCoverageItem[];
+}
+
+export async function compareBatchAudits(
+  baselineRunId: string,
+  comparisonRunId: string,
+): Promise<AuditComparisonResponse> {
+  const url = `${API_BASE}/api/batch-audits/compare`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      baseline_run_id: baselineRunId,
+      comparison_run_id: comparisonRunId,
+    }),
+  });
+
+  if (!response.ok) {
+    let errorDetail = `Comparison request failed with HTTP ${response.status}`;
+    try {
+      const errJson = await response.json();
+      if (errJson.detail) {
+        errorDetail = errJson.detail;
+      }
+    } catch {
+      // Fallback
+    }
+    throw new Error(errorDetail);
+  }
+
+  return response.json();
+}
+
+export function getComparisonExportUrl(
+  baselineRunId: string,
+  comparisonRunId: string,
+  format: 'json' | 'markdown',
+): string {
+  return `${API_BASE}/api/batch-audits/compare/export?baseline_run_id=${encodeURIComponent(
+    baselineRunId,
+  )}&comparison_run_id=${encodeURIComponent(comparisonRunId)}&format=${format}`;
+}
+
+export async function downloadComparisonExport(
+  baselineRunId: string,
+  comparisonRunId: string,
+  format: 'json' | 'markdown',
+): Promise<void> {
+  const url = getComparisonExportUrl(baselineRunId, comparisonRunId, format);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to export comparison: HTTP ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const ext = format === 'markdown' ? 'md' : 'json';
+  const filename = `audit_comparison_${baselineRunId.slice(0, 8)}_${comparisonRunId.slice(0, 8)}.${ext}`;
+
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = downloadUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(downloadUrl);
+  document.body.removeChild(a);
+}

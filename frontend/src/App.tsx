@@ -9,13 +9,14 @@ import {
 } from './services/api';
 import SitemapDiscovery from './components/SitemapDiscovery';
 import BatchAudit from './components/BatchAudit';
+import AuditComparison from './components/AuditComparison';
 
 type ConnectionState = 'loading' | 'connected' | 'error';
 type FilterOption = 'all' | FindingStatus;
 
 export default function App() {
   // Navigation tab state
-  const [activeTab, setActiveTab] = useState<'audit' | 'batch' | 'sitemaps'>('audit');
+  const [activeTab, setActiveTab] = useState<'audit' | 'batch' | 'sitemaps' | 'compare'>('audit');
   const [batchPreloadUrls, setBatchPreloadUrls] = useState<string[]>([]);
   const [batchPreloadWebsite, setBatchPreloadWebsite] = useState<string>('');
 
@@ -217,9 +218,26 @@ export default function App() {
               M3
             </span>
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('compare')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === 'compare'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>⚖️</span>
+            <span>Audit Comparison</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700">
+              M6.1
+            </span>
+          </button>
         </div>
 
-        {activeTab === 'batch' ? (
+        {activeTab === 'compare' ? (
+          <AuditComparison />
+        ) : activeTab === 'batch' ? (
           <BatchAudit
             initialUrls={batchPreloadUrls}
             initialWebsiteUrl={batchPreloadWebsite}

@@ -278,15 +278,47 @@ Content-Disposition: attachment; filename="seo_audit_{run_id}.csv"
 
 ---
 
-### Running the Test Suites
+---
 
-#### Backend Tests (M1–M5)
-```powershell
-backend\.venv\Scripts\python.exe -m pytest backend/ -v
-```
+### Milestone 6.1: Audit Run Comparison
 
-#### Frontend Production Build
+The **Audit Run Comparison** engine compares two existing, persisted batch audit runs to evaluate how a website's technical SEO posture has progressed over time.
+
+#### Core Capabilities:
+- **Baseline vs. Comparison Semantics**:
+  - **Baseline Run**: The older or reference audit run.
+  - **Comparison Run**: The newer audit run being evaluated against the baseline.
+  - Answers: *"Compared with the baseline, what new issues emerged, what was resolved, and what metadata changed?"*
+- **Issue Classification & Fingerprinting**:
+  - **New Issues**: SEO findings present in the newer run but absent in the baseline.
+  - **Resolved Issues**: Issues present in the baseline that were verified as passing in the newer run on successfully audited pages.
+  - **Persistent Issues**: Issues present across both audit runs.
+  - **Incomparable Findings**: Issues that cannot be verified as resolved because a page failed to load or was not included due to partial run coverage. The engine strictly avoids false positives by never assuming an issue is resolved when coverage is incomplete.
+- **Page Coverage Differencing**:
+  - Distinguishes **Common pages**, **Newly discovered pages**, and **Pages not present in the newer audit** (safely distinguished from deletion).
+- **SEO Metadata Tracking**:
+  - Compares `<title>`, `<meta name="description">`, canonical links, and HTTP status codes, categorizing changes as `added`, `removed`, or `changed`.
+- **Evidence-Based Overall Assessment**:
+  - Categorizes overall trajectory as `Improved`, `Deteriorated`, `Mixed Changes`, `No Detected Changes`, or `Incomplete Comparison`, with a concise explanation of the underlying metrics.
+- **Report Exports**:
+  - Downloadable comparisons in formatted **JSON** or sanitized **Markdown** (with table cell pipe character escaping).
+
+#### Comparison API Endpoints:
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/batch-audits/compare` | Compare two runs: `{"baseline_run_id": "...", "comparison_run_id": "..."}` |
+| `GET` | `/api/batch-audits/compare/export` | Download comparison report (`?baseline_run_id=...&comparison_run_id=...&format=json\|markdown`) |
+
+#### Running Tests:
 ```powershell
+# Run comparison engine and API test suites
+backend\.venv\Scripts\python.exe -m pytest backend/tests/test_comparison_engine.py backend/tests/test_comparison_api.py -v
+
+# Run full backend regression suite (190 passed)
+backend\.venv\Scripts\python.exe -m pytest backend/ -q
+
+# Run frontend production build
 npm run --prefix frontend build
 ```
 
@@ -295,4 +327,5 @@ npm run --prefix frontend build
 ## Known Limitations & Production Recommendations
 - **In-Process Background Tasks**: The batch orchestrator currently manages concurrency in-process using Python's `asyncio` event loop and SQLite. This is ideal for lightweight, local-first deployments. If deploying to a distributed, multi-server cloud environment, migrating the background runner to a durable distributed worker (e.g. Celery / RQ) with Redis/PostgreSQL is recommended.
 - **TOCTOU DNS Rebinding Window**: Pre-flight URL validation checks host IP addresses against loopback, RFC 1918, link-local, and cloud metadata ranges before HTTP request dispatch. In standard host OS environments without network-level egress proxies, an inherent microsecond Time-Of-Check to Time-Of-Use (TOCTOU) window exists if an attacker controls a public DNS server configured for sub-millisecond DNS rebinding. For enterprise production deployments, configure operating system firewall egress rules or an egress filtering proxy.
-
+- **Browser Memory Utilization**: Running Playwright Chromium rendering on batch audits consumes significantly higher CPU/memory than standard HTTPX static auditing. Concurrency for browser-enabled audits should be constrained to 1–2 workers on resource-constrained environments.
+- **Scope Compatibility**: Comparisons require both runs to target the same website origin (`target_origin`). Runs targeting disparate domains are safely rejected with HTTP 400.

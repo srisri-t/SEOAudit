@@ -18,6 +18,11 @@ from app.engine.batch.exporter import (
     export_batch_markdown,
 )
 from app.engine.batch.orchestrator import _ACTIVE_TASKS, BatchOrchestrator
+from app.engine.comparison.comparator import compare_audit_runs
+from app.engine.comparison.exporter import (
+    export_comparison_json,
+    export_comparison_markdown,
+)
 from app.models.batch import (
     AggregateSummary,
     BatchAuditCreateRequest,
@@ -25,6 +30,10 @@ from app.models.batch import (
     BatchAuditRunResponse,
     BatchPagesResponse,
     PageStatus,
+)
+from app.models.comparison import (
+    AuditComparisonRequest,
+    AuditComparisonResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,6 +134,147 @@ def list_batch_audits_endpoint(
     runs = repo.list_runs(limit=limit, offset=offset)
     total = repo.count_runs()
     return BatchAuditListResponse(total=total, runs=runs)
+
+
+@router.post(
+    "/compare",
+    response_model=AuditComparisonResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Compare Two Batch Audit Runs",
+    description="Compares two existing batch audit runs to identify new, resolved, and persistent SEO issues and metadata changes.",
+)
+def compare_batch_audits_endpoint(
+    payload: AuditComparisonRequest,
+) -> AuditComparisonResponse:
+    """Compare two existing batch audit runs."""
+    if payload.baseline_run_id == payload.comparison_run_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Baseline and comparison runs must be distinct audit runs.",
+        )
+
+    repo = get_repository()
+    baseline_run = repo.get_run(payload.baseline_run_id)
+    if not baseline_run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Baseline audit run '{payload.baseline_run_id}' not found.",
+        )
+
+    comparison_run = repo.get_run(payload.comparison_run_id)
+    if not comparison_run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Comparison audit run '{payload.comparison_run_id}' not found.",
+        )
+
+    baseline_pages = repo.get_all_pages_for_run(payload.baseline_run_id)
+    comparison_pages = repo.get_all_pages_for_run(payload.comparison_run_id)
+
+    try:
+        return compare_audit_runs(
+            baseline_run=baseline_run,
+            baseline_pages=baseline_pages,
+            comparison_run=comparison_run,
+            comparison_pages=comparison_pages,
+        )
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(err),
+        ) from err
+    except Exception as err:
+        logger.exception("Unexpected error during audit comparison")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while comparing audit runs.",
+        ) from err
+
+
+@router.get(
+    "/compare/export",
+    summary="Export Audit Run Comparison",
+    description="Exports the audit run comparison in JSON or Markdown format.",
+)
+def export_comparison_endpoint(
+    baseline_run_id: str = Query(..., description="Baseline run ID"),
+    comparison_run_id: str = Query(..., description="Comparison run ID"),
+    export_format: Literal["json", "markdown"] = Query(
+        default="json",
+        alias="format",
+        description="Desired export format: json or markdown",
+    ),
+) -> Response:
+    """Export comparison result as a downloadable report."""
+    if baseline_run_id == comparison_run_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Baseline and comparison runs must be distinct audit runs.",
+        )
+
+    repo = get_repository()
+    baseline_run = repo.get_run(baseline_run_id)
+    if not baseline_run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Baseline audit run '{baseline_run_id}' not found.",
+        )
+
+    comparison_run = repo.get_run(comparison_run_id)
+    if not comparison_run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Comparison audit run '{comparison_run_id}' not found.",
+        )
+
+    baseline_pages = repo.get_all_pages_for_run(baseline_run_id)
+    comparison_pages = repo.get_all_pages_for_run(comparison_run_id)
+
+    try:
+        comparison = compare_audit_runs(
+            baseline_run=baseline_run,
+            baseline_pages=baseline_pages,
+            comparison_run=comparison_run,
+            comparison_pages=comparison_pages,
+        )
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(err),
+        ) from err
+    except Exception as err:
+        logger.exception("Unexpected error during comparison export")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while exporting audit comparison.",
+        ) from err
+
+    base_short = baseline_run_id[:8]
+    comp_short = comparison_run_id[:8]
+
+    if export_format == "json":
+        json_content = export_comparison_json(comparison)
+        return Response(
+            content=json_content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="comparison_{base_short}_{comp_short}.json"',
+            },
+        )
+    elif export_format == "markdown":
+        md_content = export_comparison_markdown(comparison)
+        return Response(
+            content=md_content,
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="comparison_{base_short}_{comp_short}.md"',
+            },
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported comparison export format '{export_format}'. Supported formats: json, markdown.",
+        )
 
 
 @router.get(
